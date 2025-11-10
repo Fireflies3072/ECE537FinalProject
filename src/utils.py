@@ -1,6 +1,7 @@
 import os
 import torch
 import platform
+import numpy as np
 
 # Device and training utils
 def training_device(cuda=True):
@@ -100,3 +101,57 @@ def calculate_gradient_penalty(real_image, fake_image, D, device):
     gradient = gradient.view(gradient.shape[0], -1)
     gradient_penalty = torch.mean((torch.norm(gradient, 2, 1) - 1) ** 2)
     return gradient_penalty
+
+class PredictionStatistics():
+    def __init__(self, num_class):
+        self.num_class = num_class
+        self.stat = np.zeros((num_class, 4), dtype=np.int64)
+    
+    def add(self, pred, expected):
+        for i in range(self.num_class):
+            tp = torch.where(pred[torch.where(expected == i)] == i)[0].shape[0]
+            fp = torch.where(pred[torch.where(expected != i)] == i)[0].shape[0]
+            fn = torch.where(pred[torch.where(expected == i)] != i)[0].shape[0]
+            tn = torch.where(pred[torch.where(expected != i)] != i)[0].shape[0]
+            self.stat[i] += [tp, fp, fn, tn]
+    
+    def reset(self):
+        self.stat = np.zeros((self.num_class, 4), dtype=np.int64)
+    
+    def get_tp(self):
+        return self.stat[:, 0]
+    
+    def get_fp(self):
+        return self.stat[:, 1]
+    
+    def get_fn(self):
+        return self.stat[:, 2]
+    
+    def get_tn(self):
+        return self.stat[:, 3]
+    
+    def get_precision(self):
+        tp = self.get_tp()
+        fp = self.get_fp()
+        precision = tp / (tp + fp)
+        return precision
+    
+    def get_recall(self):
+        tp = self.get_tp()
+        fn = self.get_fn()
+        recall = tp / (tp + fn)
+        return recall
+
+    def get_accuracy(self):
+        tp = self.get_tp()
+        fp = self.get_fp()
+        fn = self.get_fn()
+        tn = self.get_tn()
+        accuracy = (tp + tn) / (tp + fp + fn + tn)
+        return accuracy
+    
+    def get_f1_score(self):
+        precision = self.get_precision()
+        recall = self.get_recall()
+        f1_score = 2 * (precision * recall) / (precision + recall)
+        return f1_score
