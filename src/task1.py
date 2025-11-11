@@ -12,34 +12,36 @@ import json
 import matplotlib.pyplot as plt
 
 # Parameters
+packet_length = 512
 num_class = 5
 num_epoch = 100
 batch_size = 64
-in_dim = 512
 hidden_dim = 128
-out_dim = num_class
 learning_rate = 0.0001
 tolerate_epoch = 5
 
-base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-model_path = os.path.join(base_path, 'model')
-data_path = os.path.join(base_path, 'data', 'data.json')
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+model_dir = os.path.join(base_dir, 'model')
+data_path = os.path.join(base_dir, 'data', 'data.json')
 
 def main():
-    # determine the device
+    # Create directory
+    os.makedirs(model_dir, exist_ok=True)
+    
+    # Determine the device
     device = training_device()
 
-    dataset_train = NetworkDataset(data_path, packet_length=in_dim, split_ratio=(0, 0.9))
+    dataset_train = NetworkDataset(data_path, packet_length=packet_length, split_ratio=(0, 0.9))
     dataloader_train = DataLoader(dataset_train, batch_size=batch_size, shuffle=True)
-    dataset_test = NetworkDataset(data_path, packet_length=in_dim, split_ratio=(0.9, 1))
+    dataset_test = NetworkDataset(data_path, packet_length=packet_length, split_ratio=(0.9, 1))
     dataloader_test = DataLoader(dataset_test, batch_size=batch_size, shuffle=False)
 
     # Define model and optimizer
-    model = Classifier(in_dim, hidden_dim, out_dim).to(device)
+    model = Classifier(packet_length, hidden_dim, num_class).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     # read model
-    epoch, test_loss = read_model(os.path.join(model_path, 'task1.pt'), model, optimizer)
+    epoch, test_loss = read_model(os.path.join(model_dir, 'task1_latest.pt'), model, optimizer)
     best_f1_score = -test_loss[0]
     tolerate_count = 0
 
@@ -82,11 +84,11 @@ def main():
         test_loss.append(-f1_score)
 
         # Save model
-        save_model(os.path.join(model_path, 'task1_latest.pt'), model, optimizer, epoch, test_loss, False)
+        save_model(os.path.join(model_dir, 'task1_latest.pt'), model, optimizer, epoch, test_loss, False)
         if f1_score > best_f1_score:
             tolerate_count = 0
             best_f1_score = f1_score
-            save_model(os.path.join(model_path, 'task1_best.pt'), model, None, epoch, test_loss, False)
+            save_model(os.path.join(model_dir, 'task1_best.pt'), model, None, epoch, test_loss, False)
         else:
             tolerate_count += 1
             if tolerate_count >= tolerate_epoch:
@@ -95,7 +97,7 @@ def main():
         epoch = epoch + 1
 
     # Save statistics
-    with open(os.path.join(model_path, 'task1_stat.json'), 'w') as f:
+    with open(os.path.join(model_dir, 'task1_stat.json'), 'w') as f:
         json.dump(stat_log, f, indent=4)
     # Plot statistics
     plt.figure(figsize=(8, 5))
@@ -112,7 +114,7 @@ def main():
     plt.ylabel('Score')
     plt.title('Task 1 Statistics')
     plt.legend()
-    plt.savefig(os.path.join(model_path, 'task1_stat.png'))
+    plt.savefig(os.path.join(model_dir, 'task1_stat.png'))
     plt.show()
 
 if __name__ == '__main__':

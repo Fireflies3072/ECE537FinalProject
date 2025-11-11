@@ -32,7 +32,7 @@ class Generator(nn.Module):
         )
 
 class Discriminator(nn.Module):
-    def __init__(self, in_dim, num_class):
+    def __init__(self, in_dim):
         super(Discriminator, self).__init__()
         self.model = nn.Sequential(
             nn.Linear(in_dim, in_dim // 2),
@@ -47,7 +47,7 @@ class Discriminator(nn.Module):
             nn.Linear(in_dim // 8, in_dim // 16),
             nn.InstanceNorm1d(in_dim // 16),
             nn.SiLU(),
-            nn.Linear(in_dim // 16, num_class)
+            nn.Linear(in_dim // 16, 1)
         )
 
     def forward(self, x):

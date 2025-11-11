@@ -1,1 +1,179 @@
 import torch
+from torch.utils.data import DataLoader
+
+from utils import training_device, read_model, save_model, PredictionStatistics, calculate_gradient_penalty
+from model import Classifier, Generator, Discriminator
+from dataset import NetworkDataset
+
+import os
+from tqdm import tqdm
+import json
+import matplotlib.pyplot as plt
+
+# Parameters
+packet_length = 512
+num_class = 5
+num_epoch = 100
+batch_size = 64
+latent_size = 32
+hidden_dim = 128
+learning_rate_G = 0.0001
+learning_rate_D = 0.0004
+tolerate_epoch = 5
+lambda_gp = 10
+data_label = 0
+
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+model_dir = os.path.join(base_dir, 'model')
+data_path = os.path.join(base_dir, 'data', 'data_gan.json')
+
+def main():
+    # Create directory
+    os.makedirs(model_dir, exist_ok=True)
+    
+    # Determine the device
+    device = training_device()
+
+    dataset_train = NetworkDataset(data_path, packet_length=packet_length)
+    dataloader_train = DataLoader(dataset_train, batch_size=batch_size, shuffle=True)
+
+    # Define model and optimizer
+    G = Generator(latent_size).to(device)
+    D = Discriminator(packet_length).to(device)
+    G_optimizer = torch.optim.Adam(G.parameters(), lr=learning_rate_G, betas=(0.0, 0.9))
+    D_optimizer = torch.optim.Adam(D.parameters(), lr=learning_rate_D, betas=(0.0, 0.9))
+    classifier1 = Classifier(packet_length, hidden_dim, num_class).to(device)
+    classifier2 = Classifier(packet_length, hidden_dim, num_class).to(device)
+
+    # read model
+    _, _ = read_model(os.path.join(model_dir, 'task1_best.pt'), classifier1).eval()
+    _, _ = read_model(os.path.join(model_dir, 'task2_best.pt'), classifier2).eval()
+    epoch, test_loss = read_model(os.path.join(model_dir, 'task3_latest.pt'), [G, D], [G_optimizer, D_optimizer])
+    best_f1_score = -test_loss[0]
+    tolerate_count = 0
+
+    # Define statistics
+    statistics1 = PredictionStatistics(num_class)
+    statistics2 = PredictionStatistics(num_class)
+    stat_log1 = []
+    stat_log2 = []
+
+    while True:
+        # Train model
+        G.train()
+        D.train()
+        progress_bar = tqdm(dataloader_train, desc=f'Training (epoch: {epoch})')
+        for real_packet, _ in progress_bar:
+            # Real packet loss
+            real_packet = real_packet.to(device)
+            D_loss_real = D(real_packet).mean()
+            # Fake packet loss
+            z = torch.randn(real_packet.shape[0], latent_size).to(device)
+            fake_packet = G(z)
+            D_loss_fake = D(fake_packet).mean()
+            # Gradient penalty
+            gradient_penalty = calculate_gradient_penalty(real_packet, fake_packet, D, device)
+            # D loss
+            D_loss = -D_loss_real + D_loss_fake + gradient_penalty * lambda_gp
+            # Optimize D
+            D_optimizer.zero_grad()
+            D_loss.backward()
+            D_optimizer.step()
+
+            # Fake packet loss
+            z = torch.randn(batch_size, latent_size).to(device)
+            fake_packet = G(z)
+            G_loss = -D(fake_packet).mean()
+            # Optimize G
+            G_optimizer.zero_grad()
+            G_loss.backward()
+            G_optimizer.step()
+
+            # Print information
+            progress_bar.set_postfix({'D_loss': D_loss.item(), 'G_loss': G_loss.item()})
+
+        # Test model
+        G.eval()
+        statistics1.reset()
+        statistics2.reset()
+        with torch.no_grad():
+            label = torch.full((batch_size,), data_label, dtype=torch.int64)
+            for i in tqdm(range(10), desc='Testing'):
+                z = torch.randn(batch_size, latent_size).to(device)
+                packet = G(z)
+                pred1 = classifier1(packet)
+                pred2 = classifier2(packet)
+                pred1_label = torch.argmax(pred1, dim=1)
+                pred2_label = torch.argmax(pred2, dim=1)
+                statistics1.add(pred1_label, label)
+                statistics2.add(pred2_label, label)
+        precision1 = statistics1.get_precision()
+        recall1 = statistics1.get_recall()
+        accuracy1 = statistics1.get_accuracy()
+        f1_score1 = statistics1.get_f1_score()
+        precision2 = statistics2.get_precision()
+        recall2 = statistics2.get_recall()
+        accuracy2 = statistics2.get_accuracy()
+        f1_score2 = statistics2.get_f1_score()
+        precision = (precision1 + precision2) / 2
+        recall = (recall1 + recall2) / 2
+        accuracy = (accuracy1 + accuracy2) / 2
+        f1_score = (f1_score1 + f1_score2) / 2
+        print(f'epoch: {epoch}  test_precision: {precision * 100:.2f}%  test_recall: {recall * 100:.2f}%  test_accuracy: {accuracy * 100:.2f}%  test_f1_score: {f1_score * 100:.2f}%')
+        stat_log1.append([epoch, precision1, recall1, accuracy1, f1_score1])
+        stat_log2.append([epoch, precision2, recall2, accuracy2, f1_score2])
+        test_loss.append(-f1_score)
+
+        # Save model
+        save_model(os.path.join(model_dir, 'task3_latest.pt'), [G, D], [G_optimizer, D_optimizer], epoch, test_loss, False)
+        if f1_score > best_f1_score:
+            tolerate_count = 0
+            best_f1_score = f1_score
+            save_model(os.path.join(model_dir, 'task3_best.pt'), [G, D], [G_optimizer, D_optimizer], epoch, test_loss, False)
+        else:
+            tolerate_count += 1
+            if tolerate_count >= tolerate_epoch:
+                break
+
+        epoch = epoch + 1
+
+    # Save statistics
+    with open(os.path.join(model_dir, 'task3_stat1.json'), 'w') as f:
+        json.dump(stat_log1, f, indent=4)
+    with open(os.path.join(model_dir, 'task3_stat2.json'), 'w') as f:
+        json.dump(stat_log2, f, indent=4)
+    # Plot statistics
+    plt.figure(figsize=(8, 5))
+    epoch_list1 = [item[0] for item in stat_log1]
+    precision_list1 = [item[1] for item in stat_log1]
+    recall_list1 = [item[2] for item in stat_log1]
+    accuracy_list1 = [item[3] for item in stat_log1]
+    f1_score_list1 = [item[4] for item in stat_log1]
+    epoch_list2 = [item[0] for item in stat_log2]
+    precision_list2 = [item[1] for item in stat_log2]
+    recall_list2 = [item[2] for item in stat_log2]
+    accuracy_list2 = [item[3] for item in stat_log2]
+    f1_score_list2 = [item[4] for item in stat_log2]
+    plt.subplot(1, 2, 1)
+    plt.plot(epoch_list1, precision_list1, label='precision', color='red')
+    plt.plot(epoch_list1, recall_list1, label='recall', color='green')
+    plt.plot(epoch_list1, accuracy_list1, label='accuracy', color='blue')
+    plt.plot(epoch_list1, f1_score_list1, label='f1_score', color='purple')
+    plt.xlabel('Epoch')
+    plt.ylabel('Score')
+    plt.title('Task 3 Statistics 1')
+    plt.legend()
+    plt.subplot(1, 2, 2)
+    plt.plot(epoch_list2, precision_list2, label='precision', color='red')
+    plt.plot(epoch_list2, recall_list2, label='recall', color='green')
+    plt.plot(epoch_list2, accuracy_list2, label='accuracy', color='blue')
+    plt.plot(epoch_list2, f1_score_list2, label='f1_score', color='purple')
+    plt.xlabel('Epoch')
+    plt.ylabel('Score')
+    plt.title('Task 3 Statistics 2')
+    plt.legend()
+    plt.savefig(os.path.join(model_dir, 'task3_stat.png'))
+    plt.show()
+
+if __name__ == '__main__':
+    main()
