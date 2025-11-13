@@ -8,6 +8,10 @@ This project explores network traffic classification using machine learning tech
 2. **Task 2**: Federated learning-based traffic classification
 3. **Task 3**: Adversarial attack using Wasserstein GAN with Gradient Penalty (WGAN-GP)
 
+### Project Description
+For detailed project requirements and specifications, refer to the course project description:
+- [ECE537 Course Project Description (PDF)](https://fireflies3072.blob.core.windows.net/fireflies/2025/25-11-12-ece537-final-project/ECE537-course-project.pdf)
+
 ## Dataset
 
 The project uses encrypted network traffic data from five different applications:
@@ -17,7 +21,87 @@ The project uses encrypted network traffic data from five different applications
 - **youtube** (Class 3): Video sharing platform
 - **chatgpt** (Class 4): AI chatbot service
 
-Each packet is represented as a sequence of 1456 bytes, normalized to the range [-1, 1]. The dataset is split with 90% for training and 10% for testing.
+### Data Collection
+
+Network traffic data was captured using **Wireshark** by monitoring download packets from each of the five different websites during normal usage sessions. The collection process involved:
+
+1. **Packet Capture**: Using Wireshark to capture network traffic while accessing each application/website
+2. **Payload Extraction**: Extracting the payload data from each captured packet
+3. **Base64 Encoding**: Converting the raw binary payload to Base64 string format for storage and portability
+4. **Labeling**: Organizing packets by their source application for supervised learning
+
+### Data Format
+
+The dataset is stored in JSON format with the following structure:
+
+```json
+{
+  "bilibili": [
+    "base64_encoded_packet_1",
+    "base64_encoded_packet_2",
+    ...
+  ],
+  "flashscore": [
+    "base64_encoded_packet_1",
+    "base64_encoded_packet_2",
+    ...
+  ],
+  "tiktok": [...],
+  "youtube": [...],
+  "chatgpt": [...]
+}
+```
+
+Each entry represents a network packet's payload encoded as a Base64 string. The dictionary keys serve as class labels for the classification tasks.
+
+### Special Dataset for Task 3
+
+For Task 3 (adversarial attack), we collected a **separate set of YouTube traffic data** (`data_youtube.json`) that is completely independent from the YouTube data in the main training dataset. This ensures:
+- **Unbiased Evaluation**: The generated adversarial samples are not evaluated against the same data used to train the victim classifiers
+- **Fair Assessment**: Prevents data leakage and provides a more realistic measure of the attack's effectiveness
+- **Generalization Testing**: Validates that the generated traffic can fool classifiers trained on different YouTube traffic patterns
+
+### Data Preprocessing
+
+The raw Base64-encoded packets undergo several preprocessing steps before being fed to the neural networks:
+
+1. **Base64 Decoding**: Convert Base64 strings back to raw binary data
+   ```python
+   raw_packet = base64.b64decode(str_packet)
+   ```
+
+2. **Truncation**: Packets longer than 1456 bytes are truncated to maintain consistent input dimensions
+   ```python
+   raw_packet = raw_packet[:packet_length]  # packet_length = 1456
+   ```
+
+3. **Zero Padding**: Packets shorter than 1456 bytes are padded with zeros at the beginning to reach the required length
+   ```python
+   raw_packet = raw_packet.rjust(packet_length, b'\x00')
+   ```
+
+4. **Normalization**: Each byte value (0-255) is normalized to the range [-1, 1] for stable neural network training
+   
+   ```python
+   normalized_value = (byte_value / 127.5) - 1.0
+   ```
+   
+5. **Tensor Conversion**: The normalized packet is converted to a PyTorch tensor for model input
+   ```python
+   packet_tensor = torch.tensor(packet, dtype=torch.float32)
+   ```
+
+### Dataset Split
+
+- **Training Set**: 90% of the data (0.0 - 0.9 split ratio)
+- **Test Set**: 10% of the data (0.9 - 1.0 split ratio)
+
+For Task 2 (Federated Learning), the training set is further divided equally among 3 clients:
+- **Client 1**: 0.0 - 0.3 (30% of total data)
+- **Client 2**: 0.3 - 0.6 (30% of total data)
+- **Client 3**: 0.6 - 0.9 (30% of total data)
+
+Each packet is represented as a sequence of 1456 bytes, normalized to the range [-1, 1].
 
 ### Download Data Files
 - [data.json](https://fireflies3072.blob.core.windows.net/fireflies/2025/25-11-12-ece537-final-project/data/data.json) - Main dataset with all 5 classes
@@ -230,8 +314,37 @@ The perfect attack success rate highlights critical security concerns:
 
 The plot above shows the progression of precision, recall, accuracy, and F1 score for both Classifier 1 (left) and Classifier 2 (right) when evaluating the generated samples across training epochs.
 
+### Running on Custom Dataset
+
+To generate adversarial samples for a different traffic class, edit the following lines in `src/task3.py`:
+
+```python
+# Line 25-26: Specify the target class
+data_label = 3              # Change to target class ID (0-4)
+data_label_str = 'youtube'  # Change to corresponding class name
+
+# Line 30: Specify the dataset path
+data_path = os.path.join(base_dir, 'data', 'data_youtube.json')  # Change to your dataset file
+```
+
+**Available Classes:**
+- `0` - `'bilibili'`
+- `1` - `'flashscore'`
+- `2` - `'tiktok'`
+- `3` - `'youtube'`
+- `4` - `'chatgpt'`
+
+**Example:** To generate adversarial ChatGPT traffic, change:
+```python
+data_label = 4
+data_label_str = 'chatgpt'
+data_path = os.path.join(base_dir, 'data', 'data_chatgpt.json')
+```
+
+**Note:** Make sure you have a separate dataset file for the target class to ensure fair evaluation, independent from the training data used in Task 1 and Task 2.
+
 ### Download Model
-- [task3_best.pt](https://fireflies3072.blob.core.windows.net/fireflies/2025/25-11-12-ece537-final-project/model/task3_best.pt) - Best WGAN-GP model checkpoint (Generator and Discriminator)
+- [task3_best.pt](https://fireflies3072.blob.core.windows.net/fireflies/2025/25-11-12-ece537-final-project/model/task3_best.pt) - Best WGAN-GP model checkpoint (Generator only)
 
 ## Implementation Details
 
@@ -243,27 +356,70 @@ ECE537FinalProject/
 │   └── data_youtube.json      # YouTube-only dataset for Task 3
 ├── model/
 │   ├── task1_best.pt          # Best centralized model
+│   ├── task1_latest.pt        # Latest centralized model checkpoint
+│   ├── task1_stat.json        # Task 1 training statistics
+│   ├── task1_stat.png         # Task 1 performance plots
 │   ├── task2_best.pt          # Best federated model
-│   ├── task3_best.pt          # Best GAN model
-│   └── *.json, *.png          # Statistics and plots
+│   ├── task2_latest.pt        # Latest federated model checkpoint
+│   ├── task2_stat.json        # Task 2 training statistics
+│   ├── task2_stat.png         # Task 2 performance plots
+│   ├── task3_best.pt          # Best GAN model (Generator + Discriminator)
+│   ├── task3_latest.pt        # Latest GAN model checkpoint
+│   ├── task3_stat1.json       # Task 3 Classifier 1 statistics
+│   ├── task3_stat2.json       # Task 3 Classifier 2 statistics
+│   └── task3_stat.png         # Task 3 performance plots
 ├── src/
-│   ├── dataset.py             # Dataset loader
-│   ├── model.py               # Neural network architectures
-│   ├── utils.py               # Utility functions
-│   ├── task1.py               # Centralized learning
-│   ├── task2.py               # Federated learning
-│   └── task3.py               # WGAN-GP attack
-└── README.md                  # This file
+│   ├── dataset.py             # Dataset loader and preprocessing
+│   ├── model.py               # Neural network architectures (Classifier, Generator, Discriminator)
+│   ├── utils.py               # Utility functions (training, saving, statistics)
+│   ├── task1.py               # Centralized learning implementation
+│   ├── task2.py               # Federated learning implementation
+│   └── task3.py               # WGAN-GP adversarial attack implementation
+├── ECE537-course project.pdf  # Project description and requirements
+├── LICENSE                    # License file
+├── README.md                  # This file (project documentation)
+├── requirements.txt           # Python dependencies
+└── pyproject.toml             # Project configuration and metadata
 ```
 
+### Installation
+
+#### Step 1: Install PyTorch
+
+First, install PyTorch based on your system configuration (CPU/CUDA version). Visit the official PyTorch website to get the appropriate installation command for your system:
+
+**[PyTorch Installation Guide](https://pytorch.org/get-started/locally/)**
+
+Select your preferences (OS, Package Manager, Python version, CUDA version) and follow the provided installation command.
+
+#### Step 2: Clone Repository and Install Dependencies
+
+```bash
+# Clone the repository
+git clone https://github.com/ECE537FinalProject.git
+cd ECE537FinalProject
+
+# Install remaining dependencies
+pip install -r requirements.txt
+```
+
+**Note:** The `requirements.txt` includes PyTorch, but if you've already installed it in Step 1, pip will skip it or verify the installation.
+
 ### Dependencies
-- Python 3.x
-- PyTorch
-- NumPy
-- Matplotlib
-- tqdm
+
+**Core Requirements:**
+- Python >= 3.8
+- PyTorch >= 2.0.0
+- NumPy >= 1.21.0
+- Matplotlib >= 3.4.0
+- tqdm >= 4.62.0
+
+**Standard Library (included with Python):**
 - json
 - base64
+- os
+- platform
+- copy
 
 ### Running the Code
 
@@ -307,18 +463,11 @@ Exposed critical vulnerabilities in ML-based traffic classifiers through a succe
 - Multi-modal verification systems
 - Continuous model monitoring and updating
 
-### Future Work
-
-1. **Defense Mechanisms**: Implement adversarial training and certified defenses
-2. **Non-IID Federated Learning**: Explore performance under more realistic heterogeneous data distributions
-3. **Differential Privacy**: Add privacy guarantees to federated learning
-4. **Multi-class Attacks**: Extend adversarial attacks to target multiple traffic classes
-5. **Real-time Deployment**: Optimize models for low-latency online classification
-6. **Explainability**: Analyze what features the models learn to improve interpretability
-
 ## Authors
 
-ECE537 Course Project
+- Chengling Xu
+- Junwen Gu
+- Jinyao Sun
 
 ## License
 
