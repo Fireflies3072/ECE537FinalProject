@@ -386,20 +386,20 @@ ECE537FinalProject/
 
 #### Step 1: Install PyTorch
 
-First, install PyTorch based on your system configuration (CPU/CUDA version). Visit the official PyTorch website to get the appropriate installation command for your system:
+First, install PyTorch based on your system configuration (CPU/CUDA version). Visit the official [PyTorch](https://pytorch.org/) website to get the appropriate installation command for your system.
 
-**[PyTorch Installation Guide](https://pytorch.org/get-started/locally/)**
+Select your system configuration and install PyTorch.
 
-Select your preferences (OS, Package Manager, Python version, CUDA version) and follow the provided installation command.
-
-#### Step 2: Clone Repository and Install Dependencies
+#### Step 2: Clone Repository
 
 ```bash
-# Clone the repository
 git clone https://github.com/ECE537FinalProject.git
 cd ECE537FinalProject
+```
 
-# Install remaining dependencies
+#### Step 3: Install Dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
