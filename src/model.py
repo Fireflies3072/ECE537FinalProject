@@ -1,4 +1,3 @@
-import torch
 from torch import nn
 
 class Classifier(nn.Module):
@@ -30,6 +29,9 @@ class Generator(nn.Module):
             nn.SiLU(),
             nn.Linear(in_dim * 8, in_dim * 16)
         )
+
+    def forward(self, x):
+        return self.model(x)
 
 class Discriminator(nn.Module):
     def __init__(self, in_dim):

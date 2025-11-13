@@ -9,23 +9,25 @@ import os
 from tqdm import tqdm
 import json
 import matplotlib.pyplot as plt
+import copy
 
 # Parameters
-packet_length = 512
+packet_length = 1456
 num_class = 5
 num_epoch = 100
 batch_size = 64
-latent_size = 32
+latent_size = 91
 hidden_dim = 128
 learning_rate_G = 0.0001
 learning_rate_D = 0.0004
 tolerate_epoch = 5
 lambda_gp = 10
-data_label = 0
+data_label = 3
+data_label_str = 'youtube'
 
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 model_dir = os.path.join(base_dir, 'model')
-data_path = os.path.join(base_dir, 'data', 'data_gan.json')
+data_path = os.path.join(base_dir, 'data', 'data_youtube.json')
 
 def main():
     # Create directory
@@ -46,10 +48,13 @@ def main():
     classifier2 = Classifier(packet_length, hidden_dim, num_class).to(device)
 
     # read model
-    _, _ = read_model(os.path.join(model_dir, 'task1_best.pt'), classifier1).eval()
-    _, _ = read_model(os.path.join(model_dir, 'task2_best.pt'), classifier2).eval()
+    _, _ = read_model(os.path.join(model_dir, 'task1_best.pt'), classifier1)
+    _, _ = read_model(os.path.join(model_dir, 'task2_best.pt'), classifier2)
+    classifier1.eval()
+    classifier2.eval()
     epoch, test_loss = read_model(os.path.join(model_dir, 'task3_latest.pt'), [G, D], [G_optimizer, D_optimizer])
     best_f1_score = -test_loss[0]
+    best_epoch = 0
     tolerate_count = 0
 
     # Define statistics
@@ -100,7 +105,8 @@ def main():
             label = torch.full((batch_size,), data_label, dtype=torch.int64)
             for i in tqdm(range(10), desc='Testing'):
                 z = torch.randn(batch_size, latent_size).to(device)
-                packet = G(z)
+                packet = G(z).detach()
+                packet = torch.round((packet + 1) * 127.5) / 127.5 - 1
                 pred1 = classifier1(packet)
                 pred2 = classifier2(packet)
                 pred1_label = torch.argmax(pred1, dim=1)
@@ -119,17 +125,18 @@ def main():
         recall = (recall1 + recall2) / 2
         accuracy = (accuracy1 + accuracy2) / 2
         f1_score = (f1_score1 + f1_score2) / 2
-        print(f'epoch: {epoch}  test_precision: {precision * 100:.2f}%  test_recall: {recall * 100:.2f}%  test_accuracy: {accuracy * 100:.2f}%  test_f1_score: {f1_score * 100:.2f}%')
-        stat_log1.append([epoch, precision1, recall1, accuracy1, f1_score1])
-        stat_log2.append([epoch, precision2, recall2, accuracy2, f1_score2])
-        test_loss.append(-f1_score)
+        print(f'epoch: {epoch}  precision: {precision[data_label] * 100:.2f}%  recall: {recall[data_label] * 100:.2f}%  accuracy: {accuracy[data_label] * 100:.2f}%  f1_score: {f1_score[data_label] * 100:.2f}%')
+        stat_log1.append({'epoch': epoch, 'precision': precision1, 'recall': recall1, 'accuracy': accuracy1, 'f1_score': f1_score1})
+        stat_log2.append({'epoch': epoch, 'precision': precision2, 'recall': recall2, 'accuracy': accuracy2, 'f1_score': f1_score2})
+        test_loss.append(-f1_score[data_label].item())
 
         # Save model
         save_model(os.path.join(model_dir, 'task3_latest.pt'), [G, D], [G_optimizer, D_optimizer], epoch, test_loss, False)
-        if f1_score > best_f1_score:
+        if f1_score[data_label] > best_f1_score:
             tolerate_count = 0
-            best_f1_score = f1_score
-            save_model(os.path.join(model_dir, 'task3_best.pt'), [G, D], [G_optimizer, D_optimizer], epoch, test_loss, False)
+            best_f1_score = f1_score[data_label]
+            best_epoch = epoch
+            save_model(os.path.join(model_dir, 'task3_best.pt'), [G], None, epoch, test_loss, False)
         else:
             tolerate_count += 1
             if tolerate_count >= tolerate_epoch:
@@ -139,35 +146,70 @@ def main():
 
     # Save statistics
     with open(os.path.join(model_dir, 'task3_stat1.json'), 'w') as f:
-        json.dump(stat_log1, f, indent=4)
+        stat_log1_json = copy.deepcopy(stat_log1)
+        for item in stat_log1_json:
+            item['precision'] = list(item['precision'])
+            item['recall'] = list(item['recall'])
+            item['accuracy'] = list(item['accuracy'])
+            item['f1_score'] = list(item['f1_score'])
+        json.dump(stat_log1_json, f, indent=4)
     with open(os.path.join(model_dir, 'task3_stat2.json'), 'w') as f:
-        json.dump(stat_log2, f, indent=4)
+        stat_log2_json = copy.deepcopy(stat_log2)
+        for item in stat_log2_json:
+            item['precision'] = list(item['precision'])
+            item['recall'] = list(item['recall'])
+            item['accuracy'] = list(item['accuracy'])
+            item['f1_score'] = list(item['f1_score'])
+        json.dump(stat_log2_json, f, indent=4)
+    
+    # Print best statistics
+    print(f'\nBest epoch: {best_epoch}')
+    best_stat1, best_stat2 = None, None
+    for i in range(len(stat_log1)):
+        if stat_log1[i]['epoch'] == best_epoch:
+            best_stat1 = stat_log1[i]
+            best_stat2 = stat_log2[i]
+            break
+    if best_stat1 is not None and best_stat2 is not None:
+        print(f'\nClass {data_label}: {data_label_str} (Classifier 1)')
+        print(f'    Precision: {best_stat1["precision"][data_label] * 100:.2f}%')
+        print(f'    Recall: {best_stat1["recall"][data_label] * 100:.2f}%')
+        print(f'    Accuracy: {best_stat1["accuracy"][data_label] * 100:.2f}%')
+        print(f'    F1 Score: {best_stat1["f1_score"][data_label] * 100:.2f}%')
+        print(f'\nClass {data_label}: {data_label_str} (Classifier 2)')
+        print(f'    Precision: {best_stat2["precision"][data_label] * 100:.2f}%')
+        print(f'    Recall: {best_stat2["recall"][data_label] * 100:.2f}%')
+        print(f'    Accuracy: {best_stat2["accuracy"][data_label] * 100:.2f}%')
+        print(f'    F1 Score: {best_stat2["f1_score"][data_label] * 100:.2f}%')
+    else:
+        print('No best stat found')
+    
     # Plot statistics
-    plt.figure(figsize=(8, 5))
-    epoch_list1 = [item[0] for item in stat_log1]
-    precision_list1 = [item[1] for item in stat_log1]
-    recall_list1 = [item[2] for item in stat_log1]
-    accuracy_list1 = [item[3] for item in stat_log1]
-    f1_score_list1 = [item[4] for item in stat_log1]
-    epoch_list2 = [item[0] for item in stat_log2]
-    precision_list2 = [item[1] for item in stat_log2]
-    recall_list2 = [item[2] for item in stat_log2]
-    accuracy_list2 = [item[3] for item in stat_log2]
-    f1_score_list2 = [item[4] for item in stat_log2]
+    plt.figure(figsize=(14, 5))
+    epoch_list1 = [item['epoch'] for item in stat_log1]
+    precision_list1 = [item['precision'][data_label] * 100 for item in stat_log1]
+    recall_list1 = [item['recall'][data_label] * 100 for item in stat_log1]
+    accuracy_list1 = [item['accuracy'][data_label] * 100 for item in stat_log1]
+    f1_score_list1 = [item['f1_score'][data_label] * 100 for item in stat_log1]
+    epoch_list2 = [item['epoch'] for item in stat_log2]
+    precision_list2 = [item['precision'][data_label] * 100 for item in stat_log2]
+    recall_list2 = [item['recall'][data_label] * 100 for item in stat_log2]
+    accuracy_list2 = [item['accuracy'][data_label] * 100 for item in stat_log2]
+    f1_score_list2 = [item['f1_score'][data_label] * 100 for item in stat_log2]
     plt.subplot(1, 2, 1)
-    plt.plot(epoch_list1, precision_list1, label='precision', color='red')
-    plt.plot(epoch_list1, recall_list1, label='recall', color='green')
-    plt.plot(epoch_list1, accuracy_list1, label='accuracy', color='blue')
-    plt.plot(epoch_list1, f1_score_list1, label='f1_score', color='purple')
+    plt.plot(epoch_list1, precision_list1, label='precision (%)', color='red')
+    plt.plot(epoch_list1, recall_list1, label='recall (%)', color='green')
+    plt.plot(epoch_list1, accuracy_list1, label='accuracy (%)', color='blue')
+    plt.plot(epoch_list1, f1_score_list1, label='f1_score (%)', color='purple')
     plt.xlabel('Epoch')
     plt.ylabel('Score')
     plt.title('Task 3 Statistics 1')
     plt.legend()
     plt.subplot(1, 2, 2)
-    plt.plot(epoch_list2, precision_list2, label='precision', color='red')
-    plt.plot(epoch_list2, recall_list2, label='recall', color='green')
-    plt.plot(epoch_list2, accuracy_list2, label='accuracy', color='blue')
-    plt.plot(epoch_list2, f1_score_list2, label='f1_score', color='purple')
+    plt.plot(epoch_list2, precision_list2, label='precision (%)', color='red')
+    plt.plot(epoch_list2, recall_list2, label='recall (%)', color='green')
+    plt.plot(epoch_list2, accuracy_list2, label='accuracy (%)', color='blue')
+    plt.plot(epoch_list2, f1_score_list2, label='f1_score (%)', color='purple')
     plt.xlabel('Epoch')
     plt.ylabel('Score')
     plt.title('Task 3 Statistics 2')

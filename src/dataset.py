@@ -3,6 +3,7 @@ from torch.utils.data import Dataset
 
 import json
 import base64
+import random
 
 class NetworkDataset(Dataset):
     def __init__(self, data_path, packet_length=512, split_ratio=(0, 1)):
@@ -10,16 +11,17 @@ class NetworkDataset(Dataset):
         self.split_ratio = split_ratio
         with open(data_path, 'r') as f:
             self.raw_data = json.load(f)
-        self.labels = self.raw_data.keys()
+        self.labels = list(self.raw_data.keys())
         self.data = self._preprocess_data()
     
     def _preprocess_data(self):
         data = []
         for i in range(len(self.labels)):
             label = self.labels[i]
-            start_idx = int(len(self.raw_data[label]) * self.split_ratio[0])
-            end_idx = int(len(self.raw_data[label]) * self.split_ratio[1])
-            for str_packet in self.raw_data[label][start_idx:end_idx]:
+            raw_data_items = self.raw_data[label]
+            start_idx = int(len(raw_data_items) * self.split_ratio[0])
+            end_idx = int(len(raw_data_items) * self.split_ratio[1])
+            for str_packet in raw_data_items[start_idx:end_idx]:
                 # Decode and truncate to packet length
                 raw_packet = base64.b64decode(str_packet)[:self.packet_length]
                 # Pad with zeros if packet length is less than packet_length

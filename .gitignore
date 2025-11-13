@@ -1,6 +1,9 @@
 # Model
 model/
 
+# Data
+data/*.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

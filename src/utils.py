@@ -59,7 +59,7 @@ def read_model(path, model, optimizer=None):
     epoch = 1
     test_loss = [100000]
     if os.path.isfile(path):
-        checkpoint = torch.load(path)
+        checkpoint = torch.load(path, weights_only=False)
         if 'model' in checkpoint:
             if isinstance(model, (list, tuple)):
                 if 'model2' in checkpoint:
@@ -94,7 +94,7 @@ def read_model(path, model, optimizer=None):
     return epoch, test_loss
 
 def calculate_gradient_penalty(real_image, fake_image, D, device):
-    alpha = torch.rand(real_image.shape[0], 1, 1, 1).to(device)
+    alpha = torch.rand(real_image.shape[0], 1).to(device)
     interpolate = (alpha * real_image + (1 - alpha) * fake_image).detach().requires_grad_(True)
     interpolate_score = D(interpolate)
     gradient = torch.autograd.grad(interpolate_score, interpolate, torch.ones_like(interpolate_score), True, True)[0]
@@ -134,12 +134,14 @@ class PredictionStatistics():
         tp = self.get_tp()
         fp = self.get_fp()
         precision = tp / (tp + fp)
+        precision[np.isnan(precision)] = 0
         return precision
     
     def get_recall(self):
         tp = self.get_tp()
         fn = self.get_fn()
         recall = tp / (tp + fn)
+        recall[np.isnan(recall)] = 0
         return recall
 
     def get_accuracy(self):
@@ -148,10 +150,12 @@ class PredictionStatistics():
         fn = self.get_fn()
         tn = self.get_tn()
         accuracy = (tp + tn) / (tp + fp + fn + tn)
+        accuracy[np.isnan(accuracy)] = 0
         return accuracy
     
     def get_f1_score(self):
         precision = self.get_precision()
         recall = self.get_recall()
         f1_score = 2 * (precision * recall) / (precision + recall)
+        f1_score[np.isnan(f1_score)] = 0
         return f1_score
