@@ -393,7 +393,7 @@ Select your system configuration and install PyTorch.
 #### Step 2: Clone Repository
 
 ```bash
-git clone https://github.com/ECE537FinalProject.git
+git clone https://github.com/Fireflies3072/ECE537FinalProject.git
 cd ECE537FinalProject
 ```
 
