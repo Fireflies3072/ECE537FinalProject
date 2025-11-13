@@ -74,4 +74,8 @@ def process_file(in_json_path: str, out_json_path: str, label: str):
 
 if __name__ == "__main__":
     # Example usage (modify paths and label as needed)
-    process_file("chatgpt1.json", "data1.json", "chatgpt")
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    in_json_path = os.path.join(base_dir, 'data', 'chatgpt1.json')
+    out_json_path = os.path.join(base_dir, 'data', 'data_chatgpt.json')
+    label = "chatgpt"
+    process_file(in_json_path, out_json_path, label)

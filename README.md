@@ -26,9 +26,28 @@ The project uses encrypted network traffic data from five different applications
 Network traffic data was captured using **Wireshark** by monitoring download packets from each of the five different websites during normal usage sessions. The collection process involved:
 
 1. **Packet Capture**: Using Wireshark to capture network traffic while accessing each application/website
-2. **Payload Extraction**: Extracting the payload data from each captured packet
-3. **Base64 Encoding**: Converting the raw binary payload to Base64 string format for storage and portability
-4. **Labeling**: Organizing packets by their source application for supervised learning
+   - Monitor network interface during active sessions (e.g., watching videos, browsing)
+   - Focus on download packets containing encrypted payload data
+
+2. **Export to JSON**: Export captured packets from Wireshark to JSON format
+   - In Wireshark: `File` → `Export Packet Dissections` → `As JSON`
+   - This creates a tshark-compatible JSON file with packet details and hex-encoded payloads
+
+3. **Payload Extraction**: Use `extract_payload.py` script to process the exported JSON
+   - Extracts encrypted on-wire payloads from network layers (prioritizes `udp.payload` > `tcp.payload` > `data.data`)
+   - Filters and validates hex-encoded payload data
+   - Converts valid payloads to Base64 string format for portability
+   
+   ```bash
+   # Example usage
+   python src/extract_payload.py
+   # Modify in_json_path, out_json_path, and label in the script as needed
+   ```
+
+4. **Dataset Organization**: The script outputs data in the required format
+   - Creates labeled JSON files (e.g., `data_youtube.json`, `data_chatgpt.json`)
+   - Each file contains Base64-encoded payloads organized by application label
+   - Multiple class datasets can be merged into the main `data.json` file
 
 ### Data Format
 
@@ -372,6 +391,7 @@ ECE537FinalProject/
 │   ├── dataset.py             # Dataset loader and preprocessing
 │   ├── model.py               # Neural network architectures (Classifier, Generator, Discriminator)
 │   ├── utils.py               # Utility functions (training, saving, statistics)
+│   ├── extract_payload.py     # Wireshark JSON to base64 payload converter
 │   ├── task1.py               # Centralized learning implementation
 │   ├── task2.py               # Federated learning implementation
 │   └── task3.py               # WGAN-GP adversarial attack implementation
