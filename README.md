@@ -2,10 +2,36 @@
 
 ## Project Overview
 
-This project explores network traffic classification using machine learning techniques and adversarial attacks on trained classifiers. The project consists of three main tasks:
+### Introduction
+
+Network traffic classification is a critical component of modern network management, security monitoring, and quality of service (QoS) control. However, the widespread adoption of encryption protocols (HTTPS, TLS, VPN) has made traditional deep packet inspection (DPI) techniques ineffective, as they rely on inspecting plaintext packet contents. **The challenge**: How do we classify encrypted network traffic when we cannot see the actual content?
+
+This project addresses this challenge using **machine learning-based traffic classification** that analyzes packet-level patterns (packet sizes, timing, sequences) rather than payload content. We explore three critical aspects:
+
+1. **Centralized Learning**: Establishing baseline classification performance when all training data is centralized
+2. **Federated Learning**: Enabling privacy-preserving collaborative learning where data remains distributed across multiple clients (e.g., different organizations, edge devices)
+3. **Adversarial Robustness**: Evaluating the security vulnerabilities of ML-based classifiers against adversarial attacks
+
+### Why This Matters
+
+**Network Traffic Classification Challenges:**
+- Modern internet traffic is predominantly **encrypted** (HTTPS, TLS 1.3, QUIC protocols)
+- Traditional DPI cannot inspect encrypted payloads without breaking encryption
+- Deep learning offers a solution by learning traffic patterns from encrypted packet metadata
+
+**Why Federated Learning:**
+- **Privacy preservation**: Organizations can collaboratively train models without sharing sensitive network data
+- **Data sovereignty**: Compliance with regulations (GDPR, HIPAA) that restrict data centralization
+- **Edge computing**: Models can be trained on distributed IoT devices or edge servers without centralized data collection
+- **Reduced bandwidth**: Only model updates are transmitted, not raw traffic data
+- **Real-world applicability**: Reflects practical deployment scenarios where data cannot be centralized
+
+This project demonstrates that federated learning achieves comparable performance to centralized learning (only 0.74% F1 score difference) while maintaining privacy, making it a viable solution for real-world network traffic analysis.
+
+### Project Tasks
 
 1. **Task 1**: Centralized learning-based traffic classification
-2. **Task 2**: Federated learning-based traffic classification
+2. **Task 2**: Federated learning-based traffic classification  
 3. **Task 3**: Adversarial attack using Wasserstein GAN with Gradient Penalty (WGAN-GP)
 
 ### Project Description
@@ -215,13 +241,56 @@ The plot above shows the progression of precision, recall, accuracy, and F1 scor
 - `hidden_dim`: 128
 
 ### Federated Learning Process
-1. Initialize global model
-2. For each communication round:
-   - Distribute global model to all clients
-   - Each client trains on local data
-   - Aggregate client models by averaging parameters
-   - Update global model
-3. Evaluate global model on test set
+
+The implementation uses the **Federated Averaging (FedAvg)** algorithm, one of the most widely adopted federated learning approaches.
+
+#### FedAvg Algorithm
+
+**Initialization:**
+- Initialize global model parameters: \( w_0 \)
+- Set number of clients: \( K = 3 \)
+- Set local training epochs per round: \( E = 1 \)
+
+**For each communication round \( t = 1, 2, ..., T \):**
+
+1. **Server → Clients**: Broadcast global model \( w_t \) to all \( K \) clients
+
+2. **Local Training** (in parallel for each client \( k \)):
+   - Receive global model: \( w_t^k \leftarrow w_t \)
+   - Initialize local optimizer (Adam with learning rate 0.0001)
+   - Train on local dataset \( D_k \) for one full epoch:
+     ```
+     For each batch (packet, label) in DataLoader(D_k):
+         prediction = model(packet)
+         loss = CrossEntropyLoss(prediction, label)
+         Backpropagate and update w_t^k
+     ```
+   - Return updated local model \( w_{t+1}^k \)
+
+3. **Clients → Server**: Upload local model parameters \( \{w_{t+1}^1, w_{t+1}^2, ..., w_{t+1}^K\} \)
+
+4. **Aggregation**: Server computes weighted average of client models:
+   ```
+   w_{t+1} = (1/K) × Σ(k=1 to K) w_{t+1}^k
+   ```
+   In our implementation with equal data distribution:
+   ```python
+   global_params[key] = mean([client_1_params[key], 
+                               client_2_params[key], 
+                               client_3_params[key]])
+   ```
+
+5. **Evaluation**: Test global model \( w_{t+1} \) on centralized test set
+
+6. **Convergence Check**: Stop if F1 score doesn't improve for 5 consecutive rounds
+
+**Key Implementation Details:**
+- **Equal Data Distribution**: Each client receives exactly 30% of the training data
+- **Synchronous Updates**: All clients participate in each round (no client sampling)
+- **Fresh Optimizer**: Each client re-initializes Adam optimizer per round to avoid optimizer state conflicts
+- **Parameter Averaging**: Simple arithmetic mean of model weights (no weighted aggregation based on dataset size)
+
+This approach enables collaborative learning while keeping each client's data private and local.
 
 ### Results
 
@@ -367,6 +436,26 @@ data_path = os.path.join(base_dir, 'data', 'data_chatgpt.json')
 
 ## Implementation Details
 
+### Environment Setup
+
+**Hardware Configuration:**
+- **GPU**: NVIDIA GeForce RTX 3050 Laptop (4GB VRAM)
+- **Compute Capability**: Suitable for small to medium-scale deep learning tasks
+- **Note**: The project can also run on CPU, though training will be slower
+
+**Software Environment:**
+- **Python Version**: 3.13
+- **Deep Learning Framework**: PyTorch 2.7.0
+- **CUDA Version**: 12.8
+- **Operating System**: Windows 11 (also compatible with Linux/macOS)
+
+**Training Time:**
+- **Task 1** (Centralized Learning): < 1 minute per epoch, ~10 epochs total
+- **Task 2** (Federated Learning): < 1 minute per communication round, ~30 rounds total
+- **Task 3** (WGAN-GP Training): < 1 minute per epoch, ~5 epochs total
+
+All tasks complete training in a few minutes on the specified hardware, making rapid experimentation feasible.
+
 ### Project Structure
 ```
 ECE537FinalProject/
@@ -483,12 +572,42 @@ Exposed critical vulnerabilities in ML-based traffic classifiers through a succe
 - Multi-modal verification systems
 - Continuous model monitoring and updating
 
-## Authors
+## References
 
-- Chengling Xu
-- Junwen Gu
-- Jinyao Sun
+1. **Gulrajani, I., Ahmed, F., Arjovsky, M., Dumoulin, V., & Courville, A. C. (2017).** "Improved Training of Wasserstein GANs." *Advances in Neural Information Processing Systems (NeurIPS)*, 30.  
+   [https://arxiv.org/abs/1704.00028](https://arxiv.org/abs/1704.00028)
+   - This paper introduces the Gradient Penalty method for WGAN, which is used in Task 3 for generating adversarial network traffic.
+
+2. **Zhang, H., & Ye, F. (2025).** "Can Federated Network Traffic Classification Protect Private Dataset?" *IEEE INFOCOM 2025 - IEEE Conference on Computer Communications Workshops (INFOCOM WKSHPS)*, London, United Kingdom, May 19-19, 2025.  
+   DOI: [https://ieeexplore.ieee.org/document/11152766](https://ieeexplore.ieee.org/document/11152766)
+   - This paper proposes a data reconstruction attack exploiting vulnerabilities in FL-based network traffic classifiers using GANs, demonstrating that adversaries can reconstruct private traffic data from model parameters. This work is related to the adversarial attack methodology in Task 3.
+
+## Team Contribution
+
+### Junwen Gu
+- Collected network traffic data for multiple applications using Wireshark
+- Led preprocessing pipeline (packet extraction, Base64 encoding, truncation, normalization)
+- Implemented Task 1 centralized learning pipeline
+- Helped prepare presentation materials and organized code
+- Contributed extensively to report writing
+
+### Jinyao Sun
+- Collected network traffic data and ensured dataset completeness
+- Built training/testing pipeline used across all tasks
+- Integrated Task 1 & Task 2 components
+- Fixed debugging issues and validated experimental correctness
+- Assisted with slides and experiment verification
+
+### Chengling Xu
+- Collected additional traffic and prepared datasets for adversarial training
+- Implemented shared training functions and utilities
+- Led Task 2 federated learning implementation
+- Led Task 3 WGAN-GP adversarial attack implementation
+- Prepared Task 3 presentation slides and analysis
+- Helped improve training stability and troubleshooting
 
 ## License
 
-This project is part of academic coursework for ECE537.
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+This project is part of academic coursework for ECE537 in University of Wisconsin-Madison.
