@@ -64,6 +64,10 @@ Network traffic data was captured using **Wireshark** by monitoring download pac
    - Filters and validates hex-encoded payload data
    - Converts valid payloads to Base64 string format for portability
    
+   ![Payload Extraction from Wireshark JSON](https://fireflies3072.blob.core.windows.net/fireflies/2025/25-11-12-ece537-final-project/image/extract_json.jpg)
+   
+   *The figure above shows the network packet structure in Wireshark's JSON export format, highlighting the payload fields that are extracted by the script.*
+   
    ```bash
    # Example usage
    python src/extract_payload.py
@@ -98,6 +102,12 @@ The dataset is stored in JSON format with the following structure:
 ```
 
 Each entry represents a network packet's payload encoded as a Base64 string. The dictionary keys serve as class labels for the classification tasks.
+
+**Actual Dataset Example:**
+
+![Actual Dataset](https://fireflies3072.blob.core.windows.net/fireflies/2025/25-11-12-ece537-final-project/image/base64_2.jpg)
+
+*Screenshot showing actual Base64-encoded network packets in the JSON dataset file.*
 
 ### Special Dataset for Task 3
 
@@ -138,19 +148,28 @@ The raw Base64-encoded packets undergo several preprocessing steps before being 
 
 ### Dataset Split
 
+**Task 1 (Centralized Learning):**
 - **Training Set**: 90% of the data (0.0 - 0.9 split ratio)
 - **Test Set**: 10% of the data (0.9 - 1.0 split ratio)
 
-For Task 2 (Federated Learning), the training set is further divided equally among 3 clients:
-- **Client 1**: 0.0 - 0.3 (30% of total data)
-- **Client 2**: 0.3 - 0.6 (30% of total data)
-- **Client 3**: 0.6 - 0.9 (30% of total data)
+**Task 2 (Federated Learning):**
+- The training set is divided equally among 3 clients, with each client getting 30% of the total data:
+  - **Client 1**: 0.0 - 0.3 (30% of total data for training)
+  - **Client 2**: 0.3 - 0.6 (30% of total data for training)
+  - **Client 3**: 0.6 - 0.9 (30% of total data for training)
+- **Test Set**: 10% of the data (0.9 - 1.0 split ratio) - shared centralized test set for evaluation
 
 Each packet is represented as a sequence of 1456 bytes, normalized to the range [-1, 1].
 
 ### Download Data Files
-- [data.json](https://fireflies3072.blob.core.windows.net/fireflies/2025/25-11-12-ece537-final-project/data/data.json) - Main dataset with all 5 classes
-- [data_youtube.json](https://fireflies3072.blob.core.windows.net/fireflies/2025/25-11-12-ece537-final-project/data/data_youtube.json) - YouTube-only dataset for Task 3
+
+**Instructions:**
+1. Create a `data/` folder in the project root directory
+2. Download the following files and place them in the `data/` folder:
+
+**Dataset Files:**
+- [data.json](https://fireflies3072.blob.core.windows.net/fireflies/2025/25-11-12-ece537-final-project/data/data.json) - Main dataset with all 5 classes (used for Task 1 and Task 2)
+- [data_youtube.json](https://fireflies3072.blob.core.windows.net/fireflies/2025/25-11-12-ece537-final-project/data/data_youtube.json) - YouTube-only dataset for Task 3 (separate from training data)
 
 ## Model Architectures
 
@@ -160,6 +179,10 @@ A fully connected neural network with the following architecture:
 - **Hidden layers**: Two hidden layers with 128 neurons each
 - **Activation function**: SiLU (Sigmoid Linear Unit)
 - **Output layer**: 5 neurons (one per class)
+
+![Classifier Architecture](https://fireflies3072.blob.core.windows.net/fireflies/2025/25-11-12-ece537-final-project/image/classifier.jpg)
+
+*Visualization of the classifier neural network architecture used in Task 1 and Task 2.*
 
 ### Generator Network (Task 3)
 A deep neural network for generating synthetic network packets:
@@ -176,6 +199,10 @@ A critic network for distinguishing real from generated packets:
 - **Layer sizes**: 1456 → 728 → 364 → 182 → 91 → 1
 - **Activation**: SiLU
 - **Output**: Wasserstein distance estimate
+
+![GAN Architecture](https://fireflies3072.blob.core.windows.net/fireflies/2025/25-11-12-ece537-final-project/image/gan.jpg)
+
+*Detailed architecture diagram of the Generator and Discriminator networks used in the WGAN-GP implementation.*
 
 ## Task 1: Centralized Learning
 
@@ -292,6 +319,10 @@ The implementation uses the **Federated Averaging (FedAvg)** algorithm, one of t
 
 This approach enables collaborative learning while keeping each client's data private and local.
 
+![Federated Learning Process](https://fireflies3072.blob.core.windows.net/fireflies/2025/25-11-12-ece537-final-project/image/federated_learning.jpg)
+
+*Visualization of the federated learning workflow showing the iterative process of local training, model aggregation, and global model distribution across clients.*
+
 ### Results
 
 | Class | Application | Precision (%) | Recall (%) | Accuracy (%) | F1 Score (%) |
@@ -339,12 +370,51 @@ The plot above shows the progression of precision, recall, accuracy, and F1 scor
 
 ## Task 3: Adversarial Attack with WGAN-GP
 
+### Overview
+
+![General GAN Process](https://fireflies3072.blob.core.windows.net/fireflies/2025/25-11-12-ece537-final-project/image/gan_general.png)
+
+*The general GAN training process: The Generator creates fake samples from random noise, while the Discriminator learns to distinguish real from fake. Through adversarial training, the Generator improves until it produces realistic samples.*
+
 ### Methodology
-- **Target**: Generate synthetic YouTube (Class 3) network traffic
+- **Target**: Generate synthetic YouTube (Class 3) network traffic that fools both Task 1 and Task 2 classifiers
 - **Attack model**: Wasserstein GAN with Gradient Penalty (WGAN-GP)
-- **Target classifiers**: Both Task 1 (centralized) and Task 2 (federated) models
-- **Objective**: Generate packets that are classified as YouTube by both classifiers
 - **Training approach**: Train generator and discriminator adversarially on real YouTube traffic
+- **Best epoch**: 1
+
+### Evaluation Metric Design
+
+A critical question in GAN-based traffic generation is: **How do we evaluate the quality of generated network packets?**
+
+#### Why Not Use Standard GAN Metrics?
+
+In image generation tasks, quality is typically measured using:
+- **Inception Score (IS)**: Measures diversity and recognizability using a pretrained InceptionV3 network
+- **Fréchet Inception Distance (FID)**: Computes distance between feature distributions of real and generated images using InceptionV3
+
+**The Problem**: These metrics rely on **pretrained feature extractors** (e.g., InceptionV3 trained on ImageNet) that can meaningfully embed images into a semantic feature space. For network traffic analysis, **no such pretrained feature extractor exists** because:
+1. Network traffic is fundamentally different from images (sequential byte patterns vs. spatial pixel patterns)
+2. There is no standardized, large-scale benchmark dataset (like ImageNet) for network traffic
+3. Traffic patterns are domain-specific and application-dependent
+4. No universal feature representation exists for encrypted packet sequences
+
+#### Our Solution: Classifier-Based Evaluation
+
+Instead of using unavailable pretrained models, we leverage the **classifiers trained in Task 1 and Task 2** as our evaluation metrics. This approach offers several advantages:
+
+1. **Task-Specific Evaluation**: The classifiers are trained on the exact same traffic distribution we're trying to generate, making them domain-appropriate evaluators
+
+2. **Dual Objectives**:
+   - **Quality Assessment**: If both classifiers confidently predict "YouTube" for generated samples, it indicates the generator has learned realistic YouTube traffic patterns
+   - **Adversarial Attack**: The same metric measures attack effectiveness—successful generation means successfully fooling the classifiers
+
+3. **Transferability Testing**: Using two independently trained classifiers (centralized vs. federated) tests whether generated samples capture fundamental traffic patterns, not just artifacts of a single model
+
+4. **Interpretable Metrics**: Classification accuracy, precision, recall, and F1 scores provide clear, interpretable measures of generation quality
+
+5. **No Additional Training Required**: We repurpose existing models rather than training separate evaluation networks
+
+This evaluation strategy is analogous to targeted adversarial attacks in computer vision, where the goal is to fool a specific classifier. Here, our "ground truth" is defined by the learned decision boundaries of our traffic classifiers, which represents the best available understanding of what constitutes authentic YouTube traffic in our system.
 
 ### Hyperparameters
 - `latent_size`: 91
@@ -353,12 +423,15 @@ The plot above shows the progression of precision, recall, accuracy, and F1 scor
 - `learning_rate_D`: 0.0004 (Discriminator)
 - `lambda_gp`: 10 (gradient penalty coefficient)
 - `betas`: (0.0, 0.9) for Adam optimizer
-- **Best epoch**: 1
 
 ### WGAN-GP Training
 - **Generator loss**: Negative Wasserstein distance (maximize discriminator score for fake samples)
 - **Discriminator loss**: Wasserstein distance + gradient penalty
 - **Gradient penalty**: Enforces 1-Lipschitz constraint for stable training
+
+![WGAN-GP Gradient Penalty](https://fireflies3072.blob.core.windows.net/fireflies/2025/25-11-12-ece537-final-project/image/wgan_gp.jpg)
+
+*The figure illustrates the gradient penalty mechanism in WGAN-GP. The penalty enforces the 1-Lipschitz constraint by sampling interpolated points between real and fake data, ensuring the discriminator's gradients have norm close to 1. This stabilizes training and prevents mode collapse.*
 
 ### Results
 
