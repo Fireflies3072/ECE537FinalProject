@@ -1,5 +1,7 @@
 # ECE537 Final Project: Network Traffic Classification and Adversarial Generation
 
+**GitHub Repository:** [https://github.com/Fireflies3072/ECE537FinalProject](https://github.com/Fireflies3072/ECE537FinalProject)
+
 ## Project Overview
 
 ### Introduction
